@@ -1,19 +1,12 @@
-use std::collections::HashMap;
-pub type ResultMap = HashMap<String, String>;
+use std::collections::BTreeMap;
+pub type ResultMap = BTreeMap<String, String>;
 
 /*
     TODO:
 
-    - use Btree
     - implement unquotes values -> space means end of value
     - implement single quoutes values
     - handle comments
-
-    - move Token and stuff to separate files?
-
-    - curr_literal >> better namimg?
-
-
 */
 
 #[derive(Debug)]
@@ -24,14 +17,13 @@ pub enum ParseError {
     InvalidAssignment,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 enum Token {
     Whitespace,
     Assignment,
     DoubleQuoteDelimiter,
     NewlineEscape,
-    Comment, // TODO -> should not be handled withing value literal ("hello#world")
-
+    Comment,
     LiteralChar(char),
 }
 
@@ -58,7 +50,6 @@ struct ParseState {
     key_buffer: Vec<char>,
     value_buffer: Vec<char>,
 
-    // not sure about naming
     curr_literal: LiteralKind,
 }
 
@@ -67,7 +58,7 @@ pub struct Parser;
 impl Parser {
     pub fn parse<'a>(input: &'a str) -> Result<ResultMap, ParseError> {
         let mut parse_state = ParseState {
-            result_map: HashMap::new(),
+            result_map: BTreeMap::new(),
             key_buffer: Vec::with_capacity(32),
             value_buffer: Vec::with_capacity(64),
             curr_literal: LiteralKind::Key,
@@ -77,6 +68,8 @@ impl Parser {
 
         while let Some(char) = chars.next() {
             let token: Token = char.into();
+
+            dbg!(token.clone());
 
             match token {
                 Token::Whitespace => {
@@ -89,8 +82,13 @@ impl Parser {
                         return Err(ParseError::InvalidAssignment);
                     }
 
-                    if let LiteralKind::Key = parse_state.curr_literal {
-                        parse_state.curr_literal = LiteralKind::Value;
+                    match parse_state.curr_literal {
+                        LiteralKind::Key => {
+                            parse_state.curr_literal = LiteralKind::Value;
+                        }
+                        LiteralKind::Value => {
+                            parse_state.value_buffer.push('=');
+                        }
                     }
                 }
                 Token::DoubleQuoteDelimiter => match parse_state.curr_literal {
@@ -147,7 +145,6 @@ mod tests {
         let input = r#"
             URL="https://hello.com"
         "#;
-
         let result = Parser::parse(input).unwrap();
         assert_eq!(result.get("URL"), Some(&"https://hello.com".to_string()));
     }
@@ -171,7 +168,6 @@ mod tests {
             URL="https://hello.com"
             EMPTY=
         "#;
-
         let result = Parser::parse(input).unwrap();
         assert_eq!(result.get("EMPTY"), Some(&"".to_string()));
     }
@@ -183,7 +179,6 @@ mod tests {
             NOTES="docummentation
 is in progress"
         "#;
-
         let result = Parser::parse(input).unwrap();
         assert_eq!(
             result.get("NOTES"),
